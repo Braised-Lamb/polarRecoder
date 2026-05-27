@@ -1,0 +1,1 @@
+{"device_kind": "h10", "name": "Polar H10", "address": "", "interval_scale_mode": "auto", "interval_min": 200.0, "interval_max": 1800.0, "scan_timeout": 10.0, "window": 60, "replay_speed": 1.0, "replay_dir": "C:\\Projects\\polarRecoder", "save_dir": "C:\\Projects\\polarRecoder", "recent_scan": []}
