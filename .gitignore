@@ -38,3 +38,6 @@ polar_dashboard_*.png
 # OS files
 .DS_Store
 Thumbs.db
+
+heartrate/
+records/

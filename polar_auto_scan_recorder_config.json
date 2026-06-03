@@ -1,0 +1,18 @@
+{
+  "name": "polar sense",
+  "num_devices": 2,
+  "scan_timeout": 10.0,
+  "save_dir": "./records",
+  "label_prefix": "polar_sense",
+  "mode": "all",
+  "reconnect_delay": 5.0,
+  "flush_interval": 1.0,
+  "queue_maxsize": 100000,
+  "status_interval": 5.0,
+  "ppg_sample_rate": 55,
+  "ppg_resolution": 22,
+  "ppg_channels": 4,
+  "startup_gap": 8.0,
+  "startup_grace": 90.0,
+  "stall_timeout": 180.0
+}

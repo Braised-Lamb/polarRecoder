@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name_keyword": "polar sense",
+  "num_devices": 2,
+  "updated_at": "2026-06-03T16:02:09",
+  "devices": [
+    {
+      "label": "E87A7F2B",
+      "name": "Polar Sense E87A7F2B",
+      "address": "A0:9E:1A:E8:7A:7F"
+    },
+    {
+      "label": "025F7230",
+      "name": "Polar Sense 025F7230",
+      "address": "24:AC:AC:02:5F:72"
+    }
+  ]
+}

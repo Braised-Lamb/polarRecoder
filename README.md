@@ -36,6 +36,21 @@ pip install -r requirements.txt
 python polar_h10_realtime_gui.py
 ```
 
+### 终端录制模式
+
+终端录制脚本只支持 Polar Verity Sense，不打开界面，并在终端输出连接和写文件日志。默认读取配置文件 `polar_sense_recorder.json`：
+
+```bash
+python polar_verity_terminal_recorder.py --config polar_sense_recorder.json
+```
+
+配置文件模板见 [polar_sense_recorder.example.json](polar_sense_recorder.example.json)。常用字段如下：
+
+- `name`：按设备名过滤
+- `address`：直接指定设备地址
+- `scan_timeout`：扫描超时，单位秒
+- `save_dir`：保存目录
+
 ### 指定设备预设
 
 ```bash
@@ -53,10 +68,11 @@ python polar_h10_realtime_gui.py --device-kind verity --replay-dir .
 
 ## 命令行参数
 
-- `--device-kind {h10,verity}`：选择设备预设
-- `--name`：按设备名过滤
-- `--address`：直接指定设备地址
-- `--scan-timeout`：扫描超时，单位秒
+- `--config`：终端录制脚本的配置文件路径，默认 `polar_sense_recorder.json`
+- `--name`：按设备名过滤，覆盖配置文件
+- `--address`：直接指定设备地址，覆盖配置文件
+- `--scan-timeout`：扫描超时，单位秒，覆盖配置文件
+- `--save-dir`：保存目录，覆盖配置文件
 - `--window-seconds`：可视化窗口时长
 - `--replay-dir`：回放 CSV 所在目录
 - `--replay-speed`：回放速度倍数
