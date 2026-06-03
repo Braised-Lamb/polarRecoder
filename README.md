@@ -3,112 +3,78 @@
 [![polar-python](https://img.shields.io/badge/polar--python-1f6feb?style=for-the-badge&logo=python&logoColor=white)](https://github.com/zHElEARN/polar-python)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2f855a?style=for-the-badge)](LICENSE)
 
-基于 `polar-python` 的 Polar BLE 设备采集与可视化工具。
+基于 `polar-python` 的 Polar BLE 设备采集、回放与批量录制工具。
+
+## 仓库中主要文件
+
+- `polar_h10_realtime_gui.py`：带 GUI 的实时显示与回放（支持 H10 与 Verity Sense 的回放模式）。
+- `polar_auto_scan_multi_recorder.py`：自动扫描并批量录制（终端模式）。
+- `polar_auto_scan_recorder_config.json`、`polar_auto_scan_recorder_config.devices.json`：自动录制的配置与设备预设。
+- `gui_settings.json`：运行 GUI 时记录的界面设置（首次运行后生成/更新）。
+- `requirements.txt`：Python 依赖列表。
+- `heartrate/` 与 `records/`：示例数据与录制输出目录。
 
 ## 功能
 
 - 扫描并连接 Polar H10 / Polar Verity Sense
-- 实时显示 HR、RR/PPI、ECG/PPG
-- 支持 CSV 回放
-- 保存最近扫描结果和界面设置到 `gui_settings.json`
+- 实时显示心率（HR）、RR/PPI、ECG/PPG（GUI 模式）
+- 支持本地 CSV 回放
+- 自动扫描并批量录制（命令行，保存到 `records/`）
 
 ## 环境要求
 
 - Windows 10 / 11
 - Python 3.11+
-- 可用的蓝牙适配器，且系统蓝牙已开启
+- 可用的蓝牙适配器（仅实时采集需要）
 
 ## 安装
 
-推荐先创建虚拟环境：
+推荐创建并激活虚拟环境，并安装依赖：
 
-```bash
+```powershell
 python -m venv .venv
-.\.venv\Scripts\activate
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-## 启动
+## 运行示例
 
-### 实时模式
+### 实时 GUI（带可视化）
 
-```bash
+```powershell
 python polar_h10_realtime_gui.py
 ```
 
-### 终端录制模式
+可选参数（回放或筛选设备）：`--device-kind`、`--replay-dir`、`--name`、`--address` 等。
 
-终端录制脚本只支持 Polar Verity Sense，不打开界面，并在终端输出连接和写文件日志。默认读取配置文件 `polar_sense_recorder.json`：
+### 自动扫描并录制（终端/批量模式）
 
-```bash
-python polar_verity_terminal_recorder.py --config polar_sense_recorder.json
+```powershell
+python polar_auto_scan_multi_recorder.py --config polar_auto_scan_recorder_config.json
 ```
 
-配置文件模板见 [polar_sense_recorder.example.json](polar_sense_recorder.example.json)。常用字段如下：
+常用配置字段示例：`name`（按设备名过滤）、`address`（指定地址）、`scan_timeout`（秒）、`save_dir`（保存目录）。
 
-- `name`：按设备名过滤
-- `address`：直接指定设备地址
-- `scan_timeout`：扫描超时，单位秒
-- `save_dir`：保存目录
+## 数据与输出文件
 
-### 指定设备预设
+程序会读取或生成常见的 CSV 文件，例如：
 
-```bash
-python polar_h10_realtime_gui.py --device-kind h10 --name "Polar H10"
-python polar_h10_realtime_gui.py --device-kind verity --name "Polar Sense"
-python polar_h10_realtime_gui.py --device-kind verity --address AA:BB:CC:DD:EE:FF
-```
-
-### 回放本地 CSV
-
-```bash
-python polar_h10_realtime_gui.py --device-kind h10 --replay-dir .
-python polar_h10_realtime_gui.py --device-kind verity --replay-dir .
-```
-
-## 命令行参数
-
-- `--config`：终端录制脚本的配置文件路径，默认 `polar_sense_recorder.json`
-- `--name`：按设备名过滤，覆盖配置文件
-- `--address`：直接指定设备地址，覆盖配置文件
-- `--scan-timeout`：扫描超时，单位秒，覆盖配置文件
-- `--save-dir`：保存目录，覆盖配置文件
-- `--window-seconds`：可视化窗口时长
-- `--replay-dir`：回放 CSV 所在目录
-- `--replay-speed`：回放速度倍数
-
-## 数据文件
-
-程序会读取或生成以下文件：
-
-- `h10_hr_rr.csv`
-- `h10_ecg.csv`
-- `h10_acc.csv`
-- `verity_hr_rr.csv`
-- `verity_ppi.csv`
-- `verity_ppg.csv`
-- `gui_settings.json`
-
-## 界面说明
-
-- `HR` 面板：心率
-- `INTERVAL` 面板：H10 显示 RR，Verity Sense 显示 PPI，支持自动 / 固定范围
-- `WAVEFORM` 面板：H10 显示 ECG，Verity Sense 显示 PPG
+- H10: `h10_hr_rr.csv`, `h10_ecg.csv`, `h10_acc.csv`
+- Verity Sense: `verity_hr_rr.csv`, `verity_ppi.csv`, `verity_ppg.csv`
+- 界面配置: `gui_settings.json`
+- 自动录制输出通常保存在 `records/` 目录下，按时间戳和设备分层存放。
 
 ## 常见问题
 
-- 扫描不到设备：确认蓝牙已开启，设备已开机并可被发现，且没有被手机或其他程序占用
-- 连接失败：先在系统蓝牙中完成配对，必要时重试扫描或调整扫描超时
-- 回放无数据：确认回放目录中存在对应 CSV 文件，且文件名与设备类型匹配
+- 扫描不到设备：确认蓝牙已开启、设备已开机且没有被其他设备占用；尝试增加扫描超时。
+- 连接失败：在系统蓝牙中先完成配对，或重启蓝牙适配器重试。
+- 回放无数据：确认回放目录存在对应 CSV 文件，且文件名与设备类型匹配。
 
 ## 许可证
 
 本仓库采用 MIT 许可证，详见 [LICENSE](LICENSE)。
 
-## 致谢与第三方库
+## 致谢
 
-本项目引用并依赖开源库 `polar-python`，用于与 Polar 设备的协议交互与数据流处理。项目地址： [zHElEARN/polar-python](https://github.com/zHElEARN/polar-python)。
+本项目依赖并借鉴 `polar-python`，项目地址：https://github.com/zHElEARN/polar-python。
 
-`polar-python` 在 GitHub 上采用 MIT 许可证（见其仓库 [LICENSE](https://github.com/zHElEARN/polar-python/blob/main/LICENSE)）。
-
-简短声明：`polar-python` 以 MIT 许可证发布。使用本仓库时，请同时参阅并遵守 `polar-python` 的许可证与贡献条款。
