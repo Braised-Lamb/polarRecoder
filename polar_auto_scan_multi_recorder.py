@@ -232,6 +232,19 @@ class Stats:
     exceptions: int = 0
 
 
+def log_line(message: str) -> None:
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def short_text(value: Any, width: int) -> str:
+    text = "" if value is None else str(value)
+    if len(text) <= width:
+        return text
+    if width <= 3:
+        return text[:width]
+    return text[: width - 3] + "..."
+
+
 def load_config(path: Path) -> AppConfig:
     if not path.exists():
         default = {
@@ -253,8 +266,8 @@ def load_config(path: Path) -> AppConfig:
             "stall_timeout": 180.0,
         }
         path.write_text(json.dumps(default, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"默认配置文件不存在，已创建: {path}")
-        print("请检查配置文件后重新运行。")
+        log_line(f"默认配置文件不存在，已创建: {path}")
+        log_line("请检查配置文件后重新运行。")
         raise SystemExit(0)
 
     with path.open("r", encoding="utf-8") as f:
@@ -393,7 +406,7 @@ def load_device_cache(path: Path, app_config: AppConfig) -> list[dict[str, str |
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 读取设备缓存失败，忽略: {exc}", flush=True)
+        log_line(f"读取设备缓存失败，忽略: {exc}")
         return []
 
     if not isinstance(raw, dict):
@@ -457,9 +470,9 @@ def save_device_cache(path: Path, app_config: AppConfig, device_configs: list[De
 
     try:
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 已保存设备缓存: {path}", flush=True)
+        log_line(f"已保存设备缓存: {path}")
     except OSError as exc:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 保存设备缓存失败: {exc}", flush=True)
+        log_line(f"保存设备缓存失败: {exc}")
 
 
 async def resolve_cached_device_configs(
@@ -645,9 +658,27 @@ class DeviceRecorder:
         self.stats = Stats()
         self.stream_locks = stream_locks
         self.connection_started_at: float | None = None
+        self.connected_at: float | None = None
+        self.state = "init"
+        self.state_since = time.monotonic()
+        self.last_error = ""
 
     def log(self, message: str):
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{self.device_config.label}] {message}", flush=True)
+        log_line(f"[{self.device_config.label}] {message}")
+
+    def set_state(self, state: str, message: str | None = None):
+        if state in {"disconnected", "stalled", "error", "waiting", "stopped"}:
+            self.connected_at = None
+
+        if state != self.state:
+            self.state = state
+            self.state_since = time.monotonic()
+            if message:
+                self.log(f"状态 -> {state}: {message}")
+            else:
+                self.log(f"状态 -> {state}")
+        elif message:
+            self.log(message)
 
     def put_row(self, queue: asyncio.Queue, row: list[Any], stream: str):
         try:
@@ -751,13 +782,13 @@ class DeviceRecorder:
 
         for name, last in self.enabled_streams():
             if last is None:
-                self.log(f"{name} 在宽限期后仍无数据，准备重连")
+                self.set_state("stalled", f"{name} 在宽限期后仍无数据，准备重连")
                 self.stats.reconnect_by_stall += 1
                 return True
 
             age = now - last
             if age > self.app_config.stall_timeout:
-                self.log(f"{name} 超过 {self.app_config.stall_timeout:g}s 无数据，last={age:.1f}s，准备重连")
+                self.set_state("stalled", f"{name} 超过 {self.app_config.stall_timeout:g}s 无数据，last={age:.1f}s，准备重连")
                 self.stats.reconnect_by_stall += 1
                 return True
 
@@ -780,10 +811,11 @@ class DeviceRecorder:
             await asyncio.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
 
     async def keep_alive(self, polar_device: PolarDevice):
+        self.set_state("recording", "开始保持连接")
         while not self.global_stop.is_set():
             await asyncio.sleep(1.0)
             if not self.polar_device_is_connected(polar_device):
-                self.log("检测到 BLE 已断开，准备重连")
+                self.set_state("disconnected", "检测到 BLE 已断开，准备重连")
                 break
             if self.has_stream_stalled():
                 break
@@ -857,28 +889,32 @@ class DeviceRecorder:
         return await BleakScanner.find_device_by_address(selected.address, timeout=self.app_config.scan_timeout)
 
     async def connect_once(self):
-        self.log(f"正在连接: name={self.device_config.name!r}, address={self.device_config.address}, rssi={self.device_config.rssi}")
+        self.set_state(
+            "connecting",
+            f"name={self.device_config.name!r}, address={self.device_config.address}, rssi={self.device_config.rssi}",
+        )
 
         device = await self.find_device_for_connection()
 
         if device is None:
-            self.log(f"未找到设备，{self.app_config.reconnect_delay:g}s 后重试")
+            self.set_state("scanning", f"未找到设备，{self.app_config.reconnect_delay:g}s 后重试")
             return
 
         async with PolarDevice(device) as polar_device:
             self.stats.connects += 1
             self.connection_started_at = time.monotonic()
+            self.connected_at = self.connection_started_at
+            self.last_error = ""
             if self.app_config.enable_hr:
                 self.stats.hr_last = None
             if self.app_config.enable_ppi:
                 self.stats.ppi_last = None
             if self.app_config.enable_ppg:
                 self.stats.ppg_last = None
-            self.log("连接成功")
+            self.set_state("connected", "连接成功")
 
             await self.start_streams(polar_device)
 
-            self.log("开始保持连接")
             await self.keep_alive(polar_device)
 
     async def run(self):
@@ -893,35 +929,101 @@ class DeviceRecorder:
                     raise
                 except Exception as exc:
                     self.stats.exceptions += 1
-                    self.log(f"连接或采集中断: {type(exc).__name__}: {exc}")
+                    self.last_error = f"{type(exc).__name__}: {exc}"
+                    self.set_state("error", f"连接或采集中断: {self.last_error}")
 
                 if not self.global_stop.is_set():
-                    self.log(f"{self.app_config.reconnect_delay:g}s 后重新连接")
+                    self.set_state("waiting", f"{self.app_config.reconnect_delay:g}s 后重新连接")
                     await self.sleep_or_stop(self.app_config.reconnect_delay)
         finally:
+            self.set_state("stopped")
             writer_task.cancel()
             await asyncio.gather(writer_task, return_exceptions=True)
 
-    def status_text(self) -> str:
-        def age(last: float | None) -> str:
-            if last is None:
-                return "None"
-            return f"{time.monotonic() - last:.1f}s"
+    def age_text(self, last: float | None) -> str:
+        if last is None:
+            return "-"
+        return f"{time.monotonic() - last:.1f}s"
 
-        return (
-            f"HR batches={self.stats.hr_batches}, rows={self.stats.hr_rows}, last={age(self.stats.hr_last)}, drop={self.stats.hr_drop}; "
-            f"PPI batches={self.stats.ppi_batches}, rows={self.stats.ppi_rows}, last={age(self.stats.ppi_last)}, drop={self.stats.ppi_drop}; "
-            f"PPG batches={self.stats.ppg_batches}, rows={self.stats.ppg_rows}, last={age(self.stats.ppg_last)}, drop={self.stats.ppg_drop}; "
-            f"connects={self.stats.connects}, stall_reconnects={self.stats.reconnect_by_stall}, exceptions={self.stats.exceptions}"
-        )
+    def stream_status(self, enabled: bool, last: float | None, rows: int, drop: int) -> str:
+        if not enabled:
+            return "off"
+        age = self.age_text(last)
+        if last is None:
+            freshness = "wait"
+        elif time.monotonic() - last > self.app_config.stall_timeout:
+            freshness = "old"
+        else:
+            freshness = "ok"
+        return f"{freshness} {age} r={rows} d={drop}"
+
+    def status_row(self) -> dict[str, str]:
+        def elapsed_text(start: float | None) -> str:
+            if start is None:
+                return "-"
+            return f"{time.monotonic() - start:.0f}s"
+
+        return {
+            "label": self.device_config.label,
+            "state": self.state,
+            "up": elapsed_text(self.connected_at),
+            "hr": self.stream_status(self.app_config.enable_hr, self.stats.hr_last, self.stats.hr_rows, self.stats.hr_drop),
+            "ppi": self.stream_status(self.app_config.enable_ppi, self.stats.ppi_last, self.stats.ppi_rows, self.stats.ppi_drop),
+            "ppg": self.stream_status(self.app_config.enable_ppg, self.stats.ppg_last, self.stats.ppg_rows, self.stats.ppg_drop),
+            "conn": str(self.stats.connects),
+            "stall": str(self.stats.reconnect_by_stall),
+            "err": str(self.stats.exceptions),
+            "last_error": short_text(self.last_error, 36),
+        }
+
+
+def format_status_table(recorders: list[DeviceRecorder]) -> list[str]:
+    headers = {
+        "label": "设备",
+        "state": "状态",
+        "up": "连接",
+        "hr": "HR",
+        "ppi": "PPI",
+        "ppg": "PPG",
+        "conn": "次数",
+        "stall": "停流",
+        "err": "异常",
+        "last_error": "最近错误",
+    }
+    rows = [recorder.status_row() for recorder in recorders]
+    columns = ["label", "state", "up", "hr", "ppi", "ppg", "conn", "stall", "err", "last_error"]
+    max_widths = {
+        "label": 18,
+        "state": 12,
+        "up": 8,
+        "hr": 24,
+        "ppi": 24,
+        "ppg": 24,
+        "conn": 6,
+        "stall": 6,
+        "err": 6,
+        "last_error": 36,
+    }
+    widths: dict[str, int] = {}
+    for column in columns:
+        content_width = max([len(headers[column]), *[len(row[column]) for row in rows]] or [len(headers[column])])
+        widths[column] = min(max_widths[column], content_width)
+
+    def format_row(row: dict[str, str]) -> str:
+        return " | ".join(short_text(row[column], widths[column]).ljust(widths[column]) for column in columns).rstrip()
+
+    lines = [format_row(headers)]
+    lines.append("-+-".join("-" * widths[column] for column in columns))
+    lines.extend(format_row(row) for row in rows)
+    return lines
 
 
 async def status_loop(recorders: list[DeviceRecorder], stop_event: asyncio.Event, interval: float):
     while not stop_event.is_set():
         await asyncio.sleep(interval)
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ===== 全局状态 =====", flush=True)
-        for recorder in recorders:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [{recorder.device_config.label}] {recorder.status_text()}", flush=True)
+        log_line("===== 全局状态 =====")
+        for line in format_status_table(recorders):
+            log_line(line)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -935,25 +1037,25 @@ async def async_main():
     app_config = load_config(args.config)
     cache_path = device_cache_path(args.config)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 配置文件: {args.config}", flush=True)
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 设备名关键字: {app_config.name!r}", flush=True)
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 目标设备数量: {app_config.num_devices}", flush=True)
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 扫描时长: {app_config.scan_timeout:g}s", flush=True)
+    log_line(f"配置文件: {args.config}")
+    log_line(f"设备名关键字: {app_config.name!r}")
+    log_line(f"目标设备数量: {app_config.num_devices}")
+    log_line(f"扫描时长: {app_config.scan_timeout:g}s")
 
     if app_config.configured_devices:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 使用配置文件中的明确设备列表", flush=True)
+        log_line("使用配置文件中的明确设备列表")
         device_configs = make_configured_device_configs(app_config)
         found: list[FoundDevice] = []
     else:
         cached_devices = load_device_cache(cache_path, app_config)
         device_configs = []
         if cached_devices:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 发现设备缓存，先按缓存设备名检索: {cache_path}", flush=True)
+            log_line(f"发现设备缓存，先按缓存设备名检索: {cache_path}")
             device_configs = await resolve_cached_device_configs(app_config, cached_devices)
             if len(device_configs) == app_config.num_devices:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] 缓存设备名检索成功，直接使用这些设备连接采集", flush=True)
+                log_line("缓存设备名检索成功，直接使用这些设备连接采集")
             else:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] 缓存设备名检索数量不匹配，改为按关键字全量扫描", flush=True)
+                log_line("缓存设备名检索数量不匹配，改为按关键字全量扫描")
 
         if device_configs:
             found = [
@@ -963,34 +1065,22 @@ async def async_main():
         else:
             found = await scan_devices_by_name(app_config.name, app_config.scan_timeout)
 
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 匹配设备数量: {len(found)}", flush=True)
+            log_line(f"匹配设备数量: {len(found)}")
             for i, dev in enumerate(found, start=1):
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] 匹配 {i}: "
-                    f"name={dev.name!r}, address={dev.address}, rssi={dev.rssi}",
-                    flush=True,
-                )
+                log_line(f"匹配 {i}: name={dev.name!r}, address={dev.address}, rssi={dev.rssi}")
 
             device_configs = make_device_configs(app_config, found)
             save_device_cache(cache_path, app_config, device_configs)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 选中设备:", flush=True)
+    log_line("选中设备:")
     for dev in device_configs:
-        print(
-            f"[{datetime.now().strftime('%H:%M:%S')}] {dev.label}: "
-            f"name={dev.name!r}, address={dev.address}, rssi={dev.rssi}",
-            flush=True,
-        )
+        log_line(f"{dev.label}: name={dev.name!r}, address={dev.address}, rssi={dev.rssi}")
 
     session_dir = app_config.save_dir / datetime.now().strftime("%Y%m%d_%H%M%S")
     session_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 保存目录: {session_dir}", flush=True)
-    print(
-        f"[{datetime.now().strftime('%H:%M:%S')}] 启用流: "
-        f"HR={app_config.enable_hr}, PPI={app_config.enable_ppi}, PPG={app_config.enable_ppg}",
-        flush=True,
-    )
+    log_line(f"保存目录: {session_dir}")
+    log_line(f"启用流: HR={app_config.enable_hr}, PPI={app_config.enable_ppi}, PPG={app_config.enable_ppg}")
 
     stop_event = asyncio.Event()
 
@@ -1003,7 +1093,7 @@ async def async_main():
     loop = asyncio.get_running_loop()
 
     def request_stop():
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 收到停止信号", flush=True)
+        log_line("收到停止信号")
         stop_event.set()
 
     try:
@@ -1036,7 +1126,7 @@ async def async_main():
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 已停止", flush=True)
+    log_line("已停止")
 
 
 def main():
