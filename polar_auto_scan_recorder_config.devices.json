@@ -1,28 +1,13 @@
 {
   "version": 1,
   "name_keyword": "polar sense",
-  "num_devices": 4,
-  "updated_at": "2026-06-05T09:03:27",
+  "num_devices": 1,
+  "updated_at": "2026-08-12T16:19:50",
   "devices": [
-    {
-      "label": "02419F32",
-      "name": "Polar Sense 02419F32",
-      "address": "24:AC:AC:02:41:9F"
-    },
     {
       "label": "E87A7F2B",
       "name": "Polar Sense E87A7F2B",
       "address": "A0:9E:1A:E8:7A:7F"
-    },
-    {
-      "label": "025F8839",
-      "name": "Polar Sense 025F8839",
-      "address": "24:AC:AC:02:5F:88"
-    },
-    {
-      "label": "E8F17D28",
-      "name": "Polar Sense E8F17D28",
-      "address": "A0:9E:1A:E8:F1:7D"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "name": "polar sense",
-  "num_devices": 4,
-  "scan_timeout": 10.0,
+  "num_devices": 1,
+  "scan_timeout": 5,
   "save_dir": "./records",
   "label_prefix": "polar_sense",
   "mode": "all",

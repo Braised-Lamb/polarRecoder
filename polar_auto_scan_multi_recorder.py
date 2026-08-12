@@ -176,6 +176,7 @@ class FoundDevice:
 
 @dataclass
 class DeviceConfig:
+    number: int
     label: str
     name: str
     address: str
@@ -371,7 +372,7 @@ def make_device_configs(app_config: AppConfig, found_devices: list[FoundDevice])
     for index, dev in enumerate(selected, start=1):
         fallback = f"{app_config.label_prefix}_{index:0{width}d}"
         label = default_device_label(dev.name, fallback)
-        configs.append(DeviceConfig(label=label, name=dev.name, address=dev.address, rssi=dev.rssi))
+        configs.append(DeviceConfig(number=index, label=label, name=dev.name, address=dev.address, rssi=dev.rssi))
     return configs
 
 
@@ -385,6 +386,7 @@ def make_configured_device_configs(app_config: AppConfig) -> list[DeviceConfig]:
         address = item.get("address") or ""
         configs.append(
             DeviceConfig(
+                number=index,
                 label=label,
                 name=name,
                 address=address,
@@ -526,6 +528,7 @@ async def resolve_cached_device_configs(
         label = cached.get("label") or f"{app_config.label_prefix}_{index:0{width}d}"
         resolved.append(
             DeviceConfig(
+                number=index,
                 label=label,
                 name=selected.name,
                 address=selected.address,
@@ -664,7 +667,7 @@ class DeviceRecorder:
         self.last_error = ""
 
     def log(self, message: str):
-        log_line(f"[{self.device_config.label}] {message}")
+        log_line(f"[{self.device_config.number:02d}/{self.device_config.label}] {message}")
 
     def set_state(self, state: str, message: str | None = None):
         if state in {"disconnected", "stalled", "error", "waiting", "stopped"}:
